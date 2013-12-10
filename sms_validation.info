@@ -1,0 +1,6 @@
+name = SMS validation
+description = User validation by SMS.
+
+dependencies[] = china_sms
+
+core = 7.x

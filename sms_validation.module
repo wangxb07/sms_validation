@@ -1,0 +1,188 @@
+<?php
+
+/**
+ * @file
+ * SMS validation module file
+ */
+
+/**
+ * const for user validated
+ */
+define('SMS_VALIDATION_BLOCKED', 0);
+define('SMS_VALIDATION_ACTIVE', 1);
+
+/**
+ * Implementation of hook_menu().
+ */
+function sms_validation_menu() {
+  $items = array();
+  $items['user/%user/sms_validation'] = array(
+    'title' => 'SMS Validation',
+    'description' => 'User validation by SMS',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('sms_validation_form', 1),
+    'access arguments' => array('validate user sms'),
+  );
+  return $items;
+}
+
+/**
+ * Implement hook_permission().
+ */
+function sms_validation_permission() {
+  return array(
+    'validate user sms' => array(
+      'description' => t('Validate by sms.'),
+      'title' => t('validate sms'),
+      'restrict access' => TRUE,
+    ),
+  );
+}
+
+/**
+ * User validate form
+ */
+function sms_validation_form($form, &$form_state, $user) {
+  $form['mobile'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Mobile'),
+    '#required' => TRUE,
+    '#description' => t('Please input your real mobile phone number.'),
+  );
+
+  $form['validate'] = array(
+    '#type' => 'container',
+    '#prefix' => '<div id="validate-container">',
+    '#suffix' => '</div>',
+  );
+
+  $form['validate']['send_code'] = array(
+    '#type' => 'button',
+    '#value' => t('Send'),
+    '#ajax' => array(
+      'callback' => 'sms_validation_send_callback',
+      'wrapper' => 'validate-container',
+    )
+  );
+
+  $form['validate']['code'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Code'),
+    '#description' => t('Please input the code that you received.'),
+  );
+
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Submit'),
+  );
+
+  return $form;
+}
+
+/**
+ * Validation for sms form.
+ */
+function sms_validation_form_validate($form, &$form_state) {
+  global $user;
+
+  $form_state['send_success'] = FALSE;
+  if ($form_state['clicked_button']['#value'] == t('Send')) {
+    // process validation code sned.
+    $mobile = $form_state['values']['mobile'];
+    if ($mobile) {
+      if (strlen($mobile) != 11) {
+        form_set_error('mobile', t('Mobile number not right.'));
+        return FALSE;
+      }
+      $code = _sms_validation_generate_code();
+      $message = t('validate code: @code', array('@code' => $code));
+      sms_validation_save(array(
+          'uid' => $user->uid,
+          'code' => $code,
+          'mobile' => $mobile,
+        ));
+      // china_sms_send($message, $mobile);
+      $form_state['send_success'] = TRUE;
+    }
+  }
+  else {
+    // check user input validation code.
+    $code = $form_state['values']['code'];
+    $mobile = $form_state['values']['mobile'];
+    if (empty($code)) {
+      form_set_error('code', t('code is required'));
+      return FALSE;
+    }
+
+    if (!empty($mobile) && !empty($code)) {
+      $result = db_select('sms_validation', 'sv')
+        ->fields('sv', array('code', 'mobile', 'updated', 'status'))
+        ->condition('code', $code)
+        ->condition('mobile', $mobile)
+        ->condition('status', SMS_VALIDATION_BLOCKED)
+        ->condition('updated', time() - 120, '>')
+        ->execute();
+
+      if ($result->rowCount() == 0) {
+        form_set_error('code', t('Code not right, or expired'));
+        return FALSE;
+      }
+    }
+  }
+}
+
+/**
+ * Submit handler for sms form.
+ */
+function sms_validation_form_submit($form, &$form_state) {
+  global $user;
+  // set user status to validated mode.
+  $code = $form_state['values']['code'];
+  $mobile = $form_state['values']['mobile'];
+
+  sms_validation_save(array(
+      'mobile' => $mobile,
+      'code' => $code,
+      'status' => SMS_VALIDATION_ACTIVE,
+    ));
+
+  drupal_set_message(t('Your account actived'), 'info');
+  drupal_goto('user/' . $user->uid);
+}
+
+/**
+ * Ajax callback
+ */
+function sms_validation_send_callback(&$form, &$form_state) {
+  $element = $form['validate'];
+
+  if ($form_state['send_success']) {
+
+    if (isset($element['send_code']['#processed'])) {
+      $element['send_code']['#disabled'] = TRUE;
+    }
+  }
+  return $element;
+}
+
+/**
+ * Generate random code for validation
+ */
+function _sms_validation_generate_code($length = 6) {
+  $nums = array();
+  for ($i = 0; $i < $length; $i ++) {
+    $nums[$i] = rand(0, 9);
+  }
+  return implode('', $nums);
+}
+
+/**
+ * Insert sms validate information to database
+ */
+function sms_validation_save($data) {
+  $data['updated'] = time();
+  return db_merge('sms_validation')
+    ->key(array('mobile' => $data['mobile']))
+    ->fields($data)
+    ->execute();
+}

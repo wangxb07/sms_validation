@@ -1,0 +1,66 @@
+<?php
+
+/**
+ * @file
+ * installion file
+ */
+
+function sms_validation_schema() {
+  $schema = array();
+
+  $schema['sms_validation'] = array(
+    'description' => 'Store SMS validation data',
+    'fields' => array(
+      'svid' => array(
+        'description' => 'The primary identifier for this table',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'uid' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => "User's {users}.uid.",
+      ),
+      'mobile' => array(
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'description' => 'Mobile number bind to this user',
+      ),
+      'code' => array(
+        'type' => 'varchar',
+        'length' => 8,
+        'not null' => FALSE,
+        'default' => '',
+        'description' => 'Validate code last generated.',
+      ),
+      'status' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'size' => 'tiny',
+        'description' => 'Whether the user is active(1) or blocked(0).',
+      ),
+      'updated' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Timestamp for when validate code was updated.',
+      )
+    ),
+    'primary key' => array('svid'),
+    'unique keys' => array(
+      'user_mobile' => array('mobile'),
+    ),
+    'foreign keys' => array(
+      'user' => array(
+        'table' => 'users',
+        'columns' => array('uid' => 'uid'),
+      ),
+    ),
+  );
+
+  return $schema;
+}
