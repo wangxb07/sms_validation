@@ -12,6 +12,15 @@ define('SMS_VALIDATION_BLOCKED', 0);
 define('SMS_VALIDATION_ACTIVE', 1);
 
 /**
+ * Implements hook_admin_paths().
+ */
+function sms_validation_admin_paths() {
+  return array(
+    'user/*/sms_validation' => TRUE,
+  );
+}
+
+/**
  * Implementation of hook_menu().
  */
 function sms_validation_menu() {
@@ -40,20 +49,28 @@ function sms_validation_permission() {
 }
 
 /**
- * User validate form
+ * user validate form build
  */
-function sms_validation_form($form, &$form_state, $user) {
+function sms_validation_form_build($parent_form = NULL) {
   $form['mobile'] = array(
     '#type' => 'textfield',
     '#title' => t('Mobile'),
     '#required' => TRUE,
     '#description' => t('Please input your real mobile phone number.'),
+    '#element_validate' => array('sms_validation_mobile_validate'),
   );
 
   $form['validate'] = array(
     '#type' => 'container',
     '#prefix' => '<div id="validate-container">',
     '#suffix' => '</div>',
+  );
+
+  $form['validate']['code'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Code'),
+    '#description' => t('Please input the code that you received.'),
+    '#required' => TRUE,
   );
 
   $form['validate']['send_code'] = array(
@@ -65,18 +82,89 @@ function sms_validation_form($form, &$form_state, $user) {
     )
   );
 
-  $form['validate']['code'] = array(
-    '#type' => 'textfield',
-    '#title' => t('Code'),
-    '#description' => t('Please input the code that you received.'),
-  );
+  if ($parent_form != NULL) {
+    $form['validate']['send_code']['#validate'] = array('sms_validation_form_validate');
+    $form['validate']['send_code']['#submit'] = array();
+    $form['validate']['send_code']['#limit_validation_errors'] = array(array('mobile'));
+  }
 
-  $form['submit'] = array(
-    '#type' => 'submit',
-    '#value' => t('Submit'),
-  );
+  if ($parent_form === NULL) {
+    $form['submit'] = array(
+      '#type' => 'submit',
+      '#value' => t('Submit'),
+    );
+  }
 
   return $form;
+}
+
+/**
+ * User validate form
+ */
+function sms_validation_form($form, &$form_state, $user) {
+  if (!sms_validation_is_active($user->uid)) {
+    return sms_validation_form_build();
+  }
+  else {
+    $form['markup'] = array(
+      '#type' => 'markup',
+      '#markup' => t('user already active.'),
+    );
+    return $form;
+  }
+}
+
+/**
+ * mobile form element validate
+ */
+function sms_validation_mobile_validate($form, &$form_state) {
+  global $user;
+  if ($form_state['clicked_button']['#value'] == t('Send')) {
+    $mobile = $form_state['values']['mobile'];
+    if ($mobile) {
+      if (strlen($mobile) != 11 || !is_numeric($mobile)) {
+        form_set_error('mobile', t('Mobile number not right.'));
+        return FALSE;
+      }
+      //TODO check the mobile number is used by other customer.
+      $mobile_existed = db_select('sms_validation', 'sv')
+        ->fields('sv', array('svid', 'uid'))
+        ->condition('mobile', $mobile)->execute()->fetchAssoc();
+      if (!empty($mobile_existed)) {
+        if ($mobile_existed['uid'] != $user->uid && $mobile_existed['uid'] != 0) {
+          form_set_error('mobile', t('Mobile number created by other customer.'));
+          return FALSE;
+        }
+      }
+
+      $code = _sms_validation_generate_code();
+      $message = t('validate code: @code', array('@code' => $code));
+      sms_validation_save(array(
+          'uid' => $user->uid,
+          'code' => $code,
+          'mobile' => $mobile,
+        ));
+      if (china_sms_send($message, $mobile)) {
+        $form_state['send_success'] = TRUE;
+        drupal_set_message(t('Validation code send success'), 'status');
+      }
+      else {
+        drupal_set_message(t('Validation code send failure'), 'error');
+      }
+    }
+    else {
+      form_set_error('mobile', t('Mobile is required.'));
+    }
+  }
+}
+
+/**
+ * Implements hook_ctools_plugin_directory()
+ */
+function sms_validation_ctools_plugin_directory($module, $plugin) {
+  if ($module == 'ctools' && $plugin == 'content_types') {
+    return 'plugins/content_types';
+  }
 }
 
 /**
@@ -86,26 +174,8 @@ function sms_validation_form_validate($form, &$form_state) {
   global $user;
 
   $form_state['send_success'] = FALSE;
-  if ($form_state['clicked_button']['#value'] == t('Send')) {
-    // process validation code sned.
-    $mobile = $form_state['values']['mobile'];
-    if ($mobile) {
-      if (strlen($mobile) != 11) {
-        form_set_error('mobile', t('Mobile number not right.'));
-        return FALSE;
-      }
-      $code = _sms_validation_generate_code();
-      $message = t('validate code: @code', array('@code' => $code));
-      sms_validation_save(array(
-          'uid' => $user->uid,
-          'code' => $code,
-          'mobile' => $mobile,
-        ));
-      // china_sms_send($message, $mobile);
-      $form_state['send_success'] = TRUE;
-    }
-  }
-  else {
+
+  if ($form_state['clicked_button']['#value'] != t('Send')) {
     // check user input validation code.
     $code = $form_state['values']['code'];
     $mobile = $form_state['values']['mobile'];
@@ -120,7 +190,7 @@ function sms_validation_form_validate($form, &$form_state) {
         ->condition('code', $code)
         ->condition('mobile', $mobile)
         ->condition('status', SMS_VALIDATION_BLOCKED)
-        ->condition('updated', time() - 120, '>')
+        ->condition('updated', time() - 1200, '>')
         ->execute();
 
       if ($result->rowCount() == 0) {
@@ -147,20 +217,18 @@ function sms_validation_form_submit($form, &$form_state) {
     ));
 
   drupal_set_message(t('Your account actived'), 'info');
-  drupal_goto('user/' . $user->uid);
+  drupal_goto();
 }
 
 /**
  * Ajax callback
  */
 function sms_validation_send_callback(&$form, &$form_state) {
-  $element = $form['validate'];
-
-  if ($form_state['send_success']) {
-
-    if (isset($element['send_code']['#processed'])) {
-      $element['send_code']['#disabled'] = TRUE;
-    }
+  if (isset($form['validate'])) {
+    $element = $form['validate'];
+  }
+  else {
+    $element = $form['account']['sms_validation']['validate'];
   }
   return $element;
 }
@@ -185,4 +253,85 @@ function sms_validation_save($data) {
     ->key(array('mobile' => $data['mobile']))
     ->fields($data)
     ->execute();
+}
+
+/**
+ * get mobile by uid
+ */
+function sms_validation_get_mobile($uid) {
+  $query = db_select('sms_validation', 's')
+    ->fields('s', array('mobile'))
+    ->condition('uid', $uid);
+  $result = $query->execute()->fetchAssoc();
+  if (isset($result['mobile'])) {
+    return $result['mobile'];
+  }
+  return FALSE;
+}
+
+/**
+ * Determine whether the user verification
+ * @param $uid
+ * @return
+ *  boolean
+ */
+function sms_validation_is_active($uid) {
+  if ($uid == 0) {
+    return FALSE;
+  }
+  $result = db_select('sms_validation', 'sv')
+    ->fields('sv', array('status'))
+    ->condition('uid', $uid)
+    ->condition('status', SMS_VALIDATION_ACTIVE)
+    ->execute();
+
+  return $result->rowCount() != 0;
+}
+
+/**
+ * Implements hook_form_alter()
+ */
+function sms_validation_form_alter(&$form, &$form_state, $form_id) {
+  if ($form_id == 'user_register_form') {
+    $form['account']['sms_validation'] = sms_validation_form_build($form_id);
+    $form['account']['sms_validation']['#type'] = 'container';
+    $form['account']['sms_validation']['#weight'] = 0;
+
+    $form['actions']['submit']['#validate'][] = 'sms_validation_form_validate';
+    //$form['actions']['submit']['#submit'][] = 'sms_validation_register_form_submit';
+  }
+}
+
+/**
+ * Implements hook_user_insert();
+ */
+function sms_validation_user_insert(&$edit, $account, $category) {
+  // set user status to validated mode.
+  $code = $edit['code'];
+  $mobile = $edit['mobile'];
+
+  sms_validation_save(array(
+      'uid' => $account->uid,
+      'mobile' => $mobile,
+      'code' => $code,
+      'status' => SMS_VALIDATION_ACTIVE,
+    ));
+}
+
+/**
+ * Impelements hook_user_delete($account)
+ */
+function sms_validation_user_delete($account) {
+  db_delete('sms_validation')->condition('uid', $account->uid)->execute();
+}
+
+// TODO 下面这部分属于硬编码，预期目标是，可以设置哪些字段默认赋值手机号码。
+function sms_validation_field_widget_form_alter(&$element, &$form_state, $context) {
+  global $user;
+
+  if (sms_validation_is_active($user->uid)) {
+    if ($element['#field_name'] == 'field_mobile') {
+      $element['value']['#default_value'] = sms_validation_get_mobile($user->uid);
+    }
+  }
 }
