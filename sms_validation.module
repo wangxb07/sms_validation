@@ -83,9 +83,11 @@ function sms_validation_form_build($parent_form = NULL) {
   );
 
   if ($parent_form != NULL) {
-    $form['validate']['send_code']['#validate'] = array('sms_validation_form_validate');
+    //$form['validate']['send_code']['#validate'] = array('sms_validation_form_validate');
     $form['validate']['send_code']['#submit'] = array();
-    $form['validate']['send_code']['#limit_validation_errors'] = array(array('mobile'));
+    $form['validate']['send_code']['#limit_validation_errors'] = array(
+      array('mobile')
+    );
   }
 
   if ($parent_form === NULL) {
@@ -181,7 +183,6 @@ function sms_validation_form_validate($form, &$form_state) {
     $mobile = $form_state['values']['mobile'];
     if (empty($code)) {
       form_set_error('code', t('code is required'));
-      return FALSE;
     }
 
     if (!empty($mobile) && !empty($code)) {
@@ -189,13 +190,13 @@ function sms_validation_form_validate($form, &$form_state) {
         ->fields('sv', array('code', 'mobile', 'updated', 'status'))
         ->condition('code', $code)
         ->condition('mobile', $mobile)
-        ->condition('status', SMS_VALIDATION_BLOCKED)
+          //->condition('status', SMS_VALIDATION_BLOCKED)
         ->condition('updated', time() - 1200, '>')
         ->execute();
+      $row = $result->fetchObject();
 
-      if ($result->rowCount() == 0) {
+      if (empty($row->updated)) {
         form_set_error('code', t('Code not right, or expired'));
-        return FALSE;
       }
     }
   }
@@ -284,8 +285,8 @@ function sms_validation_is_active($uid) {
     ->condition('uid', $uid)
     ->condition('status', SMS_VALIDATION_ACTIVE)
     ->execute();
-
-  return $result->rowCount() != 0;
+  $row = $result->fetchObject();
+  return !empty($row->status);
 }
 
 /**
@@ -297,7 +298,8 @@ function sms_validation_form_alter(&$form, &$form_state, $form_id) {
     $form['account']['sms_validation']['#type'] = 'container';
     $form['account']['sms_validation']['#weight'] = 0;
 
-    $form['actions']['submit']['#validate'][] = 'sms_validation_form_validate';
+    $form['#validate'][] = 'sms_validation_form_validate';
+    $form['actions']['submit']['#limit_validation_errors'] = FALSE;
     //$form['actions']['submit']['#submit'][] = 'sms_validation_register_form_submit';
   }
 }
