@@ -1,5 +1,5 @@
 name = SMS validation
-description = User validation by SMS.
+description = User mobile validate by SMS.
 
 dependencies[] = china_sms
 
