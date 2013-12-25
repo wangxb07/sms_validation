@@ -294,13 +294,15 @@ function sms_validation_is_active($uid) {
  */
 function sms_validation_form_alter(&$form, &$form_state, $form_id) {
   if ($form_id == 'user_register_form') {
-    $form['account']['sms_validation'] = sms_validation_form_build($form_id);
-    $form['account']['sms_validation']['#type'] = 'container';
-    $form['account']['sms_validation']['#weight'] = 0;
+    $admin = user_access('administer users');
+    if (!$admin) {
+      $form['account']['sms_validation'] = sms_validation_form_build($form_id);
+      $form['account']['sms_validation']['#type'] = 'container';
+      $form['account']['sms_validation']['#weight'] = 0;
 
-    $form['#validate'][] = 'sms_validation_form_validate';
-    $form['actions']['submit']['#limit_validation_errors'] = FALSE;
-    //$form['actions']['submit']['#submit'][] = 'sms_validation_register_form_submit';
+      $form['#validate'][] = 'sms_validation_form_validate';
+      $form['actions']['submit']['#limit_validation_errors'] = FALSE;
+    }
   }
 }
 
