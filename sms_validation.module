@@ -310,16 +310,18 @@ function sms_validation_form_alter(&$form, &$form_state, $form_id) {
  * Implements hook_user_insert();
  */
 function sms_validation_user_insert(&$edit, $account, $category) {
-  // set user status to validated mode.
-  $code = $edit['code'];
-  $mobile = $edit['mobile'];
+  if (!empty($edit['code']) || !empty($edit['mobile'])) {
+    // set user status to validated mode.
+    $code = $edit['code'];
+    $mobile = $edit['mobile'];
 
-  sms_validation_save(array(
-      'uid' => $account->uid,
-      'mobile' => $mobile,
-      'code' => $code,
-      'status' => SMS_VALIDATION_ACTIVE,
-    ));
+    sms_validation_save(array(
+        'uid' => $account->uid,
+        'mobile' => $mobile,
+        'code' => $code,
+        'status' => SMS_VALIDATION_ACTIVE,
+      ));
+  }
 }
 
 /**
