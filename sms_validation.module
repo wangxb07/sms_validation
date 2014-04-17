@@ -75,7 +75,7 @@ function sms_validation_form_build($parent_form = NULL) {
 
   $form['validate']['send_code'] = array(
     '#type' => 'button',
-    '#value' => t('Send'),
+    '#value' => t('Send validate code'),
     '#ajax' => array(
       'callback' => 'sms_validation_send_callback',
       'wrapper' => 'validate-container',
@@ -121,7 +121,8 @@ function sms_validation_form($form, &$form_state, $user) {
  */
 function sms_validation_mobile_validate($form, &$form_state) {
   global $user;
-  if ($form_state['clicked_button']['#value'] == t('Send')) {
+  //TODO 通过其他关键属性判断点击来源
+  if ($form_state['clicked_button']['#value'] == t('Send validate code')) {
     $mobile = $form_state['values']['mobile'];
     if ($mobile) {
       if (strlen($mobile) != 11 || !is_numeric($mobile)) {
