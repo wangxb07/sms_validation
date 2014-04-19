@@ -337,7 +337,7 @@ function sms_validation_field_widget_form_alter(&$element, &$form_state, $contex
   global $user;
 
   if (sms_validation_is_active($user->uid)) {
-    if ($element['#field_name'] == 'field_mobile') {
+    if (isset($element['#field_name']) && $element['#field_name'] == 'field_mobile') {
       $element['value']['#default_value'] = sms_validation_get_mobile($user->uid);
     }
   }
