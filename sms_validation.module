@@ -305,21 +305,21 @@ function sms_validation_is_active($uid) {
  * Implements hook_form_alter()
  */
 function sms_validation_form_alter(&$form, &$form_state, $form_id) {
+
   if ($form_id == 'user_register_form') {
-    $admin = user_access('administer users');
-    if (!$admin) {
+    if (current_path() != 'admin/people/create') {
       $form['account']['sms_validation'] = sms_validation_form_build($form_id);
       $form['account']['sms_validation']['#type'] = 'container';
       $form['account']['sms_validation']['#weight'] = 0;
 
       $form['#validate'][] = 'sms_validation_form_validate';
       $form['actions']['submit']['#limit_validation_errors'] = FALSE;
-    }
 
-    // Alert create account form when login_by_mobile is enabled
-    if (variable_get('sms_validation_login_by_mobile', FALSE)) {
-      $form['account']['name']['#type'] = 'hidden';
-      $form['account']['name']['#value'] = 'sms_validate_' . user_password();
+      // Alert create account form when login_by_mobile is enabled
+      if (variable_get('sms_validation_login_by_mobile', FALSE)) {
+        $form['account']['name']['#type'] = 'hidden';
+        $form['account']['name']['#value'] = 'sms_validate_' . user_password();
+      }
     }
   }
   if (variable_get('sms_validation_login_by_mobile', FALSE)) {
