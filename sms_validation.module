@@ -32,6 +32,13 @@ function sms_validation_menu() {
     'page arguments' => array('sms_validation_form', 1),
     'access arguments' => array('validate user sms'),
   );
+  $items['admin/config/people/login-by-mobile'] = array(
+    'title' => 'Login By Mobile',
+    'description' => 'Settings form of whether to enable mobile phone number to login',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('sms_validation_settings_form', 1),
+    'access arguments' => array('administer sms validation'),
+  );
   return $items;
 }
 
@@ -43,6 +50,10 @@ function sms_validation_permission() {
     'validate user sms' => array(
       'description' => t('Validate by sms.'),
       'title' => t('validate sms'),
+    ),
+    'administer sms validation' => array(
+      'description' => t('Administer sms validate settings.'),
+      'title' => t('Administer sms validate settings'),
       'restrict access' => TRUE,
     ),
   );
@@ -121,8 +132,8 @@ function sms_validation_form($form, &$form_state, $user) {
  */
 function sms_validation_mobile_validate($form, &$form_state) {
   global $user;
-  //TODO 通过其他关键属性判断点击来源
-  if ($form_state['clicked_button']['#value'] == t('Send validate code', array(), array('context' => 'sms validate code'))) {
+
+  if ($form_state['clicked_button']['#value'] == $form_state['values']['send_code']) {
     $mobile = $form_state['values']['mobile'];
     if ($mobile) {
       if (strlen($mobile) != 11 || !is_numeric($mobile)) {
@@ -304,6 +315,17 @@ function sms_validation_form_alter(&$form, &$form_state, $form_id) {
       $form['#validate'][] = 'sms_validation_form_validate';
       $form['actions']['submit']['#limit_validation_errors'] = FALSE;
     }
+
+    // Alert create account form when login_by_mobile is enabled
+    if (variable_get('sms_validation_login_by_mobile', FALSE)) {
+      $form['account']['name']['#type'] = 'hidden';
+      $form['account']['name']['#value'] = 'sms_validate_' . user_password();
+    }
+  }
+  if (variable_get('sms_validation_login_by_mobile', FALSE)) {
+    if ($form_id == 'user_login_block' || $form_id == 'user_login') {
+      $form['name']['#title'] = t('Mobile');
+    }
   }
 }
 
@@ -321,6 +343,17 @@ function sms_validation_user_insert(&$edit, $account, $category) {
     $account = $account_wrapper->raw();
 
     field_attach_update('user', $account);
+
+    if (variable_get('sms_validation_login_by_mobile', FALSE)) {
+      // Replace username with mobile.
+      db_update('users')
+        ->fields(array('name' => $mobile))
+        ->condition('uid', $account->uid)
+        ->execute();
+
+      $edit['name'] = $mobile;
+      $account->name = $mobile;
+    }
 
     sms_validation_save(array(
         'uid' => $account->uid,
@@ -385,3 +418,15 @@ function sms_validation_enable() {
   }
 }
 
+/**
+ * sms validate settings form callback
+ */
+function sms_validation_settings_form($form, &$form_state) {
+  $form['sms_validation_login_by_mobile'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Login by mobile number'),
+    '#default_value' => variable_get('sms_validation_login_by_mobile', FALSE),
+  );
+
+  return system_settings_form($form);
+}
