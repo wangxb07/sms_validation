@@ -54,7 +54,7 @@ function sms_validation_permission() {
 function sms_validation_form_build($parent_form = NULL) {
   $form['mobile'] = array(
     '#type' => 'textfield',
-    '#title' => t('Mobile'),
+    '#title' => t('Mobile', array(), array('context' => 'sms validate code')),
     '#required' => TRUE,
     '#description' => t('Please input your real mobile phone number.'),
     '#element_validate' => array('sms_validation_mobile_validate'),
@@ -68,14 +68,14 @@ function sms_validation_form_build($parent_form = NULL) {
 
   $form['validate']['code'] = array(
     '#type' => 'textfield',
-    '#title' => t('Code'),
+    '#title' => t('Code', array(), array('context' => 'sms validate code')),
     '#description' => t('Please input the code that you received.'),
     '#required' => TRUE,
   );
 
   $form['validate']['send_code'] = array(
     '#type' => 'button',
-    '#value' => t('Send validate code'),
+    '#value' => t('Send validate code', array(), array('context' => 'sms validate code')),
     '#ajax' => array(
       'callback' => 'sms_validation_send_callback',
       'wrapper' => 'validate-container',
@@ -122,7 +122,7 @@ function sms_validation_form($form, &$form_state, $user) {
 function sms_validation_mobile_validate($form, &$form_state) {
   global $user;
   //TODO 通过其他关键属性判断点击来源
-  if ($form_state['clicked_button']['#value'] == t('Send validate code')) {
+  if ($form_state['clicked_button']['#value'] == t('Send validate code', array(), array('context' => 'sms validate code'))) {
     $mobile = $form_state['values']['mobile'];
     if ($mobile) {
       if (strlen($mobile) != 11 || !is_numeric($mobile)) {
@@ -316,6 +316,12 @@ function sms_validation_user_insert(&$edit, $account, $category) {
     $code = $edit['code'];
     $mobile = $edit['mobile'];
 
+    $account_wrapper = entity_metadata_wrapper('user', $account);
+    $account_wrapper->user_mobile->set($mobile);
+    $account = $account_wrapper->raw();
+
+    field_attach_update('user', $account);
+
     sms_validation_save(array(
         'uid' => $account->uid,
         'mobile' => $mobile,
@@ -342,3 +348,40 @@ function sms_validation_field_widget_form_alter(&$element, &$form_state, $contex
     }
   }
 }
+
+/**
+ * Implements hook_enable()
+ */
+function sms_validation_enable() {
+  field_info_cache_clear();
+
+  // Check if our field is not already created.
+  if (!field_info_field('user_mobile')) {
+    $field = array(
+      'field_name' => 'user_mobile',
+      'type' => 'text',
+      'locked' => TRUE,
+    );
+    field_create_field($field);
+  }
+  if (!field_info_instance('user', 'user_mobile', 'user')) {
+    // Create the instance on the bundle.
+    $instance = array(
+      'field_name' => 'user_mobile',
+      'entity_type' => 'user',
+      'label' => 'Mobile',
+      'bundle' => 'user',
+      // If you don't set the "required" property then the field wont be required by default.
+      'required' => TRUE,
+      'settings' => array(
+        // Here you inform either or not you want this field showing up on the registration form.
+        'user_register_form' => FALSE,
+      ),
+      'widget' => array(
+        'type' => 'textfield',
+      ),
+    );
+    field_create_instance($instance);
+  }
+}
+
