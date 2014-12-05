@@ -90,7 +90,14 @@ function sms_validation_form_build($parent_form = NULL) {
     '#ajax' => array(
       'callback' => 'sms_validation_send_callback',
       'wrapper' => 'validate-container',
-    )
+    ),
+    '#attached' => array(
+      'js' => array(
+        drupal_get_path('module', 'sms_validation') . '/sms_validation.js' => array(
+          'type' => 'file',
+        ),
+      ),
+    ),
   );
 
   if ($parent_form != NULL) {
@@ -142,11 +149,20 @@ function sms_validation_mobile_validate($form, &$form_state) {
       }
       //TODO check the mobile number is used by other customer.
       $mobile_existed = db_select('sms_validation', 'sv')
-        ->fields('sv', array('svid', 'uid'))
+        ->fields('sv', array('svid', 'uid', 'updated'))
         ->condition('mobile', $mobile)->execute()->fetchAssoc();
       if (!empty($mobile_existed)) {
         if ($mobile_existed['uid'] != $user->uid && $mobile_existed['uid'] != 0) {
           form_set_error('mobile', t('Mobile number created by other customer.'));
+          return FALSE;
+        }
+        // send code repeated check
+        //TODO configable timeout
+        $time_remaining = time() - $mobile_existed['updated'] - variable_get('sms_validation_send_code_timeout', 120);
+        $form_state['send_code_time_remaining'] = $time_remaining;
+
+        if ($time_remaining < 0) {
+          form_set_error('mobile', t('Send code time remaining: %time_remaining', array('%time_remaining' => $time_remaining * -1)));
           return FALSE;
         }
       }
@@ -160,6 +176,7 @@ function sms_validation_mobile_validate($form, &$form_state) {
         ));
       if (china_sms_send($message, $mobile)) {
         $form_state['send_success'] = TRUE;
+        $form_state['send_code_time_remaining'] = variable_get('sms_validation_send_code_timeout', 120) * -1;
         drupal_set_message(t('Validation code send success'), 'status');
       }
       else {
@@ -243,6 +260,10 @@ function sms_validation_send_callback(&$form, &$form_state) {
   else {
     $element = $form['account']['sms_validation']['validate'];
   }
+  if (isset($form_state['send_code_time_remaining'])) {
+    $element['send_code']['#attributes']['data-remaining'] = $form_state['send_code_time_remaining'];
+  }
+
   return $element;
 }
 
